@@ -9,6 +9,8 @@ library(ggplot2)
 library(DT)
 library(tidyr)
 library(reshape2)
+library(networkD3)
+library(readr)
 
 ui <- fluidPage(
   titlePanel(
@@ -50,33 +52,42 @@ ui <- fluidPage(
     mainPanel(
       tabsetPanel(
         tabPanel("Map", 
-                 leafletOutput("map", height = "800px")
+                 leafletOutput("map", height = "800px")),
+        
+        # Create the Overview tab
+        tabPanel(
+          title = "Overview",
+          
+          # Header
+          div(style = "text-align: center; margin-top: 20px;", 
+              h2("Overview of Earthquake Alerts and Tsunami Status")
+          ),
+          
+          # Sankey diagram and text output
+          div(style = "text-align: center; margin-top: 20px;",
+              fluidRow(
+                column(12, sankeyNetworkOutput("sankey_plot", height = "500px")),  # Sankey plot column adjusted
+                column(12, uiOutput("explanation_text"))  # Text output column
+              )
+          ),
+          
+          # Footer
+          div(style = "text-align: center; margin-top: 20px; font-size: 12px; color: grey;",
+              "Data Source: Earthquake Analysis Project | Last Updated: 2024"
+          )
         ),
+        
         tabPanel("Time",
+                 div(style = "text-align: center; margin-top: 20px;", 
+                     h3()
+                 ),
                  plotlyOutput("yearTrendPlot", height = "600px")
         ),
-        tabPanel("Continent",
-                 fluidRow(
-                   column(12,
-                          selectInput("selectedContinent", 
-                                      "Select Continent:",
-                                      choices = c("North America", "South America", "Europe", 
-                                                  "Asia", "Africa", "Oceania"),
-                                      selected = "North America")
-                   )
-                 ),
-                 fluidRow(
-                   column(12,
-                          plotlyOutput("continentMetrics", height = "600px")
-                   )
-                 ),
-                 fluidRow(
-                   column(12,
-                          dataTableOutput("continentSummary")
-                   )
-                 )
-        ),
+        
         tabPanel("Country Comparison",
+                 div(style = "text-align: center; margin-top: 20px;", 
+                     h3()
+                 ),
                  fluidRow(
                    column(6,
                           selectInput("continent1", 
@@ -93,13 +104,26 @@ ui <- fluidPage(
                  ),
                  plotlyOutput("countryComparisonPlot", height = "600px")
         ),
-        tabPanel("Tsunami Analysis",
-                 fluidRow(
-                   column(6, plotlyOutput("tsunamiMagnitudeBox")),
-                   column(6, plotlyOutput("tsunamiDepthBox"))
-                 )
-        )
+        
+        tabPanel(
+          title = "Data View",
+          div(style = "text-align: center; margin-top: 20px;", 
+              h2("Top Countries by Continent Average Earthquake Data")
+          ),
+          fluidRow(
+            column(6,
+                   selectInput("continent1", 
+                               "Select Continent:",
+                               choices = c("North America", "South America", "Europe", 
+                                           "Asia", "Africa", "Oceania"))
+            ),
+            dataTableOutput("continentSummary")
+          )
+          
+        ),
+       
       ),
+      
       tags$head(
         tags$style(HTML("
             .loading-spinner {
@@ -111,17 +135,8 @@ ui <- fluidPage(
         "))
       ),
       
-      # Add notification area
-      div(id = "notification-area", class = "notification-area"),
-      
-      # ... rest of existing UI code ...
+      div(id = "notification-area", class = "notification-area")
     )
-  ),
-  
-  # Add custom message at the bottom of the page
-  tags$div(
-    style = "position: fixed; bottom: 0; width: 100%; text-align: center; padding: 10px; background-color: #f9f9f9;",
-    "Data Insighters: Charlotte A., Sena B., Trisha G., Om D., Helly S., Kapil K."
   )
 )
 
@@ -185,8 +200,8 @@ server <- function(input, output, session) {
       addScaleBar(position = "bottomleft")
   })
   
+  earthquake_data<-read.csv("Data/modified_earthquake_data.csv")
   
-  # Star plot for earthquake details
   output$starPlot <- renderPlot({
     quake <- selected_quake()
     if (!is.null(quake)) {
@@ -225,8 +240,9 @@ server <- function(input, output, session) {
         cglty = 1,
         axislabcol = "grey50",
         vlcex = 0.8,
-        title = "Earthquake Metrics"
+        title = "Earthquake Metrics:"
       )
+      mtext(paste("Name:", quake$title), side = 3, line = 0.5, cex = 0.9)
     } else {
       plot(NULL, xlim=c(0,1), ylim=c(0,1), 
            xlab="", ylab="", 
@@ -247,6 +263,15 @@ server <- function(input, output, session) {
       "yellow" = "#FFd800",
       "orange" = "#FF6600",
       "red" = "#BF0d0d"
+    )
+    
+    that <- c("blue", "grey")
+    names(that) <- c("Tsunami", "City")
+    
+    extra <- paste(
+      "<span style='background-color:", that, "; width: 10px; height: 10px; display: inline-block;'></span>",
+      toupper(names(that)),
+      "<br>"
     )
     
     legend_html <- paste(
@@ -373,6 +398,7 @@ server <- function(input, output, session) {
         )
     }
     
+    
     map %>%
       addControl(
         html = paste(
@@ -383,6 +409,13 @@ server <- function(input, output, session) {
         ),
         position = "bottomright"
       ) %>%
+      addControl(html = paste(
+        "<div style='background-color: white; padding: 10px; border-radius: 5px;'>",
+        paste(extra, collapse = ""),
+        "</div>"
+      ),
+      position = "bottomleft"
+      )%>%
       addLayersControl(
         overlayGroups = c("Earthquakes", "Major Cities", "Tectonic Plates", 
                           "Tsunami Rings", "City Labels"),
@@ -409,223 +442,181 @@ server <- function(input, output, session) {
     }
   })
   
+  my_data2 <-read.csv("Data/modified_earthquake_data.csv")
+  
+  my_data2 <- my_data2 %>%
+    mutate(
+      magnitude_bins = case_when(
+        magnitude >= 6 & magnitude < 7 ~ "Magnitude 6-7",
+        magnitude >= 7 & magnitude < 8 ~ "Magnitude 7-8",
+        magnitude >= 8 & magnitude < 9 ~ "Magnitude 8-9",
+        magnitude >= 9 ~ "Magnitude 9+",
+        TRUE ~ "Unknown"
+      ),
+      tsunami_status = ifelse(tsunami == 1, "Tsunami", "No Tsunami")
+    )
+  
+  # Count transitions for Sankey diagram
+  link_data1 <- my_data2 %>%
+    count(magnitude_bins) %>%
+    rename(value = n) %>%
+    mutate(source = 0, 
+           target = case_when(
+             magnitude_bins == "Magnitude 6-7" ~ 1,
+             magnitude_bins == "Magnitude 7-8" ~ 2,
+             magnitude_bins == "Magnitude 8-9" ~ 3,
+             magnitude_bins == "Magnitude 9+" ~ 4
+           ))
+  
+  link_data2 <- my_data2 %>%
+    count(magnitude_bins, alert_new) %>%
+    rename(value = n) %>%
+    mutate(
+      source = case_when(
+        magnitude_bins == "Magnitude 6-7" ~ 1,
+        magnitude_bins == "Magnitude 7-8" ~ 2,
+        magnitude_bins == "Magnitude 8-9" ~ 3,
+        magnitude_bins == "Magnitude 9+" ~ 4
+      ),
+      target = case_when(
+        alert_new == "Yellow" ~ 5,
+        alert_new == "Orange" ~ 6,
+        alert_new == "Red" ~ 7
+      )
+    )
+  
+  link_data3 <- my_data2 %>%
+    count(alert_new, tsunami_status) %>%
+    rename(value = n) %>%
+    mutate(
+      source = case_when(
+        alert_new == "Yellow" ~ 5,
+        alert_new == "Orange" ~ 6,
+        alert_new == "Red" ~ 7
+      ),
+      target = case_when(
+        tsunami_status == "No Tsunami" ~ 8,
+        tsunami_status == "Tsunami" ~ 9
+      )
+    )
+  
+  # Combine links for Sankey diagram
+  links <- bind_rows(link_data1, link_data2, link_data3) %>% 
+    select(source, target, value) %>% 
+    na.omit()
+  
+  # Create nodes for Sankey plot
+  nodes <- data.frame(
+    name = c("Earthquakes", "Magnitude 6-7", "Magnitude 7-8", "Magnitude 8-9", "Magnitude 9+",
+             "Yellow", "Orange", "Red", "No Tsunami", "Tsunami"),
+    stringsAsFactors = FALSE
+  )
+  
+  # Corrected color mapping - magnitude bins from light to dark blue
+  my_color <- JS('d3.scaleOrdinal()
+  .domain(["Earthquakes", "Magnitude 6-7", "Magnitude 7-8", "Magnitude 8-9", "Magnitude 9+",
+           "Yellow", "Orange", "Red", "No Tsunami", "Tsunami"])
+  .range(["#666666", "#E6F3FF", "#85B8FF", "#1A75FF", "#004DBF", 
+          "#FFDE21", "#FFA500", "#FF0000", "#32CD32", "#4B0082"])')
+  
+  
+  output$sankey_plot <- renderSankeyNetwork({
+    sankeyNetwork(
+      Links = links, 
+      Nodes = nodes,
+      Source = "source", 
+      Target = "target", 
+      Value = "value", 
+      NodeID = "name", 
+      colourScale = JS(my_color), 
+      fontSize = 12, 
+      nodeWidth = 30, 
+      height = 500, 
+      width = 800
+    )
+  })
+  
+    
+    output$explanation_text <- renderUI({
+      HTML("
+    <div style='padding: 20px; line-height: 1.6;'>
+      <h3>Metric Definitions</h3>
+      
+      <p><strong>1. MMI (Modified Mercalli Intensity)</strong><br>
+      A scale used to measure the intensity of an earthquake's effect at different locations, 
+      ranging from I (not felt) to XII (total destruction).</p>
+      
+      <p><strong>2. CDI (Community Internet Intensity Map)</strong><br>
+      A crowdsourced tool that allows people to report earthquake shaking, 
+      helping to estimate earthquake intensity at different locations.</p>
+      
+      <p><strong>3. Depth</strong><br>
+      The depth of the earthquake's focus, measured in kilometers from the Earth's surface 
+      to the epicenter. Affects the intensity of shaking experienced.</p>
+      
+      <p><strong>4. Magnitude</strong><br>
+      A numerical measure of the energy released by an earthquake, typically measured 
+      on the Richter scale or moment magnitude scale (Mw).</p>
+      
+      <p><strong>5. Significance</strong><br>
+      Refers to the potential impact of the earthquake, often tied to magnitude and depth, 
+      as well as the proximity to populated areas and infrastructure.</p>
+    </div>
+  ")
+    })
+  
   colorPalette <- reactive({
     n_colors <- max(3, length(unique(earthquakes()$alert_new)))
     RColorBrewer::brewer.pal(n_colors, "Set2")
   })
   
-  # Use the reactive color palette in your plots
   output$yearTrendPlot <- renderPlotly({
     yearly_counts <- earthquakes() %>%
       filter(year >= 1995, year <= 2023) %>%
       group_by(year) %>%
       summarise(count = n())
     
-    lm_model <- lm(count ~ year, data = yearly_counts)
-    yearly_counts$predicted <- predict(lm_model)
+    # Fit a smoothed loess model for smoothing
+    loess_model <- loess(count ~ year, data = yearly_counts)
+    yearly_counts$smoothed <- predict(loess_model)
     
     colors <- colorPalette()
     
     plot_ly() %>%
-      add_trace(data = yearly_counts, 
-                x = ~year, 
-                y = ~count, 
-                type = 'scatter', 
-                mode = 'markers+lines',
-                name = 'Actual Count',
-                line = list(color = colors[1])) %>%
-      add_trace(data = yearly_counts,
+      # Add bar plot for actual counts
+      add_bars(data = yearly_counts, 
+               x = ~year, 
+               y = ~count, 
+               name = 'Actual Count', 
+               marker = list(color = "#7592e9")) %>%
+      # Add smoothed line
+      add_lines(data = yearly_counts,
                 x = ~year,
-                y = ~predicted,
-                type = 'scatter',
-                mode = 'lines',
-                name = 'Trend Line',
-                line = list(color = colors[2], dash = 'dash')) %>%
-      layout(title = 'Earthquake Count by Year (1995-2023) with Trend Line',
-             xaxis = list(title = 'Year'),
-             yaxis = list(title = 'Number of Earthquakes'),
+                y = ~smoothed,
+                name = 'Smoothed Line',
+                line = list(color = colors[2])) %>%
+      layout(title = 'Earthquake Count by Year (1995-2023) with Smoothed Line',
+             xaxis = list(title = ''),  # Remove axis label
+             yaxis = list(title = ''),  # Remove axis label
              showlegend = TRUE)
   })
   
-  # Replace the existing continentMetrics output and related code with this fixed version:
-  # Replace the existing continentMetrics output and related code with this version:
-  
-  # Replace the existing continentMetrics output and related code with this version:
-  
-  metrics_data <- reactive({
-    req(input$selectedContinent)
-    
-    # Get data for selected continent
-    continent_data <- earthquakes() %>%
-      filter(continent == input$selectedContinent)
-    
-    # Calculate current averages
-    averages <- continent_data %>%
-      summarise(
-        sig = mean(sig, na.rm = TRUE),
-        magnitude = mean(magnitude, na.rm = TRUE),
-        mmi = mean(mmi, na.rm = TRUE),
-        cdi = mean(cdi, na.rm = TRUE)
-      )
-    
-    # Calculate min/max values
-    ranges <- continent_data %>%
-      summarise(
-        sig_min = min(sig, na.rm = TRUE),
-        sig_max = max(sig, na.rm = TRUE),
-        magnitude_min = min(magnitude, na.rm = TRUE),
-        magnitude_max = max(magnitude, na.rm = TRUE),
-        mmi_min = min(mmi, na.rm = TRUE),
-        mmi_max = max(mmi, na.rm = TRUE),
-        cdi_min = min(cdi, na.rm = TRUE),
-        cdi_max = max(cdi, na.rm = TRUE)
-      )
-    
-    # Normalize averages for display
-    max_values <- earthquakes() %>%
-      summarise(
-        sig = max(sig, na.rm = TRUE),
-        magnitude = max(magnitude, na.rm = TRUE),
-        mmi = max(mmi, na.rm = TRUE),
-        cdi = max(cdi, na.rm = TRUE)
-      )
-    
-    data.frame(
-      Metric = c("Significance", "Magnitude", "MMI", "CDI"),
-      Value = c(
-        (averages$sig / max_values$sig) * 100,
-        (averages$magnitude / max_values$magnitude) * 100,
-        (averages$mmi / max_values$mmi) * 100,
-        (averages$cdi / max_values$cdi) * 100
-      ),
-      Original = c(averages$sig, averages$magnitude, averages$mmi, averages$cdi),
-      Min = c(ranges$sig_min, ranges$magnitude_min, ranges$mmi_min, ranges$cdi_min),
-      Max = c(ranges$sig_max, ranges$magnitude_max, ranges$mmi_max, ranges$cdi_max)
-    )
-  })
-  
-  output$continentMetrics <- renderPlotly({
-    req(metrics_data())
-    
-    df <- metrics_data()
-    n_metrics <- nrow(df)
-    angles <- seq(0, 360, length.out = n_metrics + 1)[1:n_metrics]
-    
-    # Create the plot without source attribute
-    p <- plot_ly() %>%
-      add_trace(
-        type = "barpolar",
-        r = df$Value,
-        theta = angles,
-        width = rep(360/n_metrics * 0.8, n_metrics),
-        customdata = df[, c("Original", "Min", "Max", "Metric")],
-        marker = list(
-          color = "rgba(232, 160, 191, 0.8)",
-          line = list(color = "rgb(8,48,107)", width = 1.5)
-        ),
-        hovertemplate = paste(
-          "%{customdata[3]}<br>",
-          "Value: %{customdata[0]:.1f}<br>",
-          "Min: %{customdata[1]:.1f}<br>",
-          "Max: %{customdata[2]:.1f}<br>",
-          "<extra></extra>"
-        )
-      ) %>%
-      layout(
-        polar = list(
-          angularaxis = list(
-            ticktext = df$Metric,
-            tickvals = angles,
-            tickmode = "array",
-            direction = "clockwise",
-            tickfont = list(size = 12)
-          ),
-          radialaxis = list(
-            visible = TRUE,
-            range = c(0, 100),
-            ticksuffix = "%",
-            showline = TRUE,
-            showticklabels = TRUE,
-            tickfont = list(size = 10)
-          ),
-          bgcolor = "white"
-        ),
-        showlegend = FALSE,
-        title = list(
-          text = paste("Earthquake Metrics for", input$selectedContinent),
-          font = list(size = 16)
-        ),
-        paper_bgcolor = "white",
-        plot_bgcolor = "white",
-        margin = list(t = 50, b = 50, l = 50, r = 50)
-      )
-    
-    # Return the plot
-    p
-  })
-  
-  # Modified observer for click events
-  observeEvent(event_data("plotly_click"), {
-    clicked_data <- event_data("plotly_click")
-    if (!is.null(clicked_data)) {
-      # Access the customdata from the clicked point
-      metric_data <- metrics_data()[clicked_data$pointNumber + 1, ]
-      
-      # Show a modal with detailed information
-      showModal(modalDialog(
-        title = paste("Details for", metric_data$Metric),
-        HTML(sprintf(
-          "<strong>Value:</strong> %.2f<br>
-                 <strong>Min:</strong> %.2f<br>
-                 <strong>Max:</strong> %.2f",
-          metric_data$Original,
-          metric_data$Min,
-          metric_data$Max
-        )),
-        easyClose = TRUE,
-        footer = modalButton("Close")
-      ))
-    }
-  })
-
-  
-  # Add a summary table for the selected continent
-  output$continentSummary <- DT::renderDT({
-    req(input$selectedContinent)
-    
-    earthquakes() %>%
-      filter(continent == input$selectedContinent) %>%
-      group_by(country) %>%
-      summarise(
-        Total_Earthquakes = n(),
-        Avg_Magnitude = round(mean(magnitude, na.rm = TRUE), 2),
-        Significance = round(mean(sig, na.rm = TRUE), 2),
-        Tsunami_Count = sum(tsunami == 1, na.rm = TRUE),
-        CDI = round(mean(cdi, na.rm = TRUE), 2),
-        MMI = round(mean(mmi, na.rm = TRUE), 2)
-      ) %>%
-      arrange(desc(Total_Earthquakes)) %>%
-      head(10) %>%
-      DT::datatable(
-        options = list(
-          pageLength = 10,
-          dom = 'tip',  # Show table, info and pagination only
-          scrollX = TRUE
-        ),
-        rownames = FALSE
-      )
-  })
   
   
   # Country comparison bar chart
   output$countryComparisonPlot <- renderPlotly({
+
     top_countries <- earthquakes() %>%
       filter(continent %in% c(input$continent1, input$continent2)) %>%
       group_by(continent, country) %>%
       summarise(count = n(), .groups = 'drop') %>%
+      arrange(desc(count)) %>%  
       group_by(continent) %>%
-      slice_max(order_by = count, n = 3)
+      slice_max(order_by = count, n = 3) %>%  
+      ungroup() %>%
+      arrange(continent, count) 
     
+
     plot_ly() %>%
       add_trace(data = top_countries,
                 x = ~country,
@@ -635,90 +626,67 @@ server <- function(input, output, session) {
                 text = ~count,
                 textposition = 'auto') %>%
       layout(title = 'Top 3 Countries with Most Earthquakes by Continent',
-             xaxis = list(title = 'Country'),
+             xaxis = list(title = 'Country', categoryorder = 'array',
+                          categoryarray = ~paste(continent, country, sep = "_")),
              yaxis = list(title = 'Number of Earthquakes'),
              barmode = 'group',
              showlegend = TRUE)
   })
   
   earthquakes2 <- reactive({
-    # Load the data and preprocess it
+ 
     eq_data <- read.csv("Data/modified_earthquake_data.csv") %>%
       mutate(
-        alert_new = tolower(alert_new),  # Make sure the alert levels are in lowercase for comparison
-        magnitude = as.numeric(magnitude)  # Ensure magnitude is numeric
+        alert_new = tolower(alert_new),  
+        magnitude = as.numeric(magnitude)  
       ) %>%
       filter(
-        !is.na(magnitude),  # Remove any rows with missing magnitudes
-        magnitude >= input$magnitude[1],  # Filter by the selected magnitude range
-        magnitude <= input$magnitude[2],  # Filter by the selected magnitude range
-        alert_new %in% tolower(input$alert_levels)  # Filter by selected alert levels (converted to lowercase)
+        !is.na(magnitude), 
+        magnitude >= input$magnitude[1], 
+        magnitude <= input$magnitude[2], 
+        alert_new %in% tolower(input$alert_levels) 
       )
     
-    # Define marker colors based on alert levels
+   
     eq_data$marker_color <- case_when(
-      eq_data$alert_new == "yellow" ~ "#FFd800",  # Set yellow for 'Yellow' alert
-      eq_data$alert_new == "orange" ~ "#FF6600",  # Set orange for 'Orange' alert
-      eq_data$alert_new == "red" ~ "#BF0d0d",     # Set red for 'Red' alert
-      TRUE ~ "#000000"                           # Default to black if no match
+      eq_data$alert_new == "yellow" ~ "#FFd800",  
+      eq_data$alert_new == "orange" ~ "#FF6600", 
+      eq_data$alert_new == "red" ~ "#BF0d0d",   
+      TRUE ~ "#000000"                           
     )
     
-    # Return the filtered and processed earthquake data
+   
     return(eq_data)
   })
   
-  output$tsunamiMagnitudeBox <- renderPlotly({
-    # Access the filtered data from the reactive expression
-    data <- earthquakes()  # Call the reactive expression to get the filtered data
+  
+  output$continentSummary <- DT::renderDT({
     
-    # Now use the filtered data in the plot
-    plot_ly() %>%
-      add_boxplot(
-        data = data %>% filter(tsunami == 0),
-        y = ~magnitude,
-        name = "No Tsunami",
-        boxpoints = "outliers"
+    earthquakes() %>%
+      filter(continent %in% c(input$continent1)) %>%
+      group_by(continent, country) %>%
+      summarise(
+        Total_Earthquakes = n(),
+        Magnitude = round(mean(magnitude, na.rm = TRUE), 2),
+        Significance = round(mean(sig, na.rm = TRUE), 2),
+        Tsunami_Count = sum(tsunami == 1, na.rm = TRUE),
+        CDI = round(mean(cdi, na.rm = TRUE), 2),
+        MMI = round(mean(mmi, na.rm = TRUE), 2),
+        Depth=round(mean(depth, na.rm = TRUE), 2)
       ) %>%
-      add_boxplot(
-        data = data %>% filter(tsunami == 1),
-        y = ~magnitude,
-        name = "Tsunami",
-        boxpoints = "outliers"
-      ) %>%
-      layout(
-        title = "Magnitude Distribution by Tsunami Occurrence",
-        yaxis = list(title = "Magnitude"),
-        showlegend = TRUE
+      arrange(desc(Total_Earthquakes)) %>%
+      head(100) %>%
+      DT::datatable(
+        options = list(
+          pageLength = 10,
+          dom = 'tip',  
+          scrollX = TRUE
+        ),
+        rownames = FALSE
       )
   })
-  
-  output$tsunamiDepthBox <- renderPlotly({
-    # Access the filtered data from the reactive expression
-    data <- earthquakes()  # Call the reactive expression to get the filtered data
-    
-    # Now use the filtered data in the plot
-    plot_ly() %>%
-      add_boxplot(
-        data = data %>% filter(tsunami == 0),
-        y = ~depth,
-        name = "No Tsunami",
-        boxpoints = "outliers"
-      ) %>%
-      add_boxplot(
-        data = data %>% filter(tsunami == 1),
-        y = ~depth,
-        name = "Tsunami",
-        boxpoints = "outliers"
-      ) %>%
-      layout(
-        title = "Depth Distribution by Tsunami Occurrence",
-        yaxis = list(title = "Depth (km)"),
-        showlegend = TRUE
-      )
-  })
-  
 }
 
 
-# Run the app
+
 shinyApp(ui = ui, server = server)
