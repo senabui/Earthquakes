@@ -1,6 +1,6 @@
 # Global Earthquake Events (1995-2023)
 
-## This app and dataset shows earthquake distributions from 1995-2023. It captures critical variables used in our analysis such as Magnitude, CDI (Community Decimal Intensity), MMI (Modified Mercalli Intensity), SIG (Significance), and Depth. 
+## This interactive app and dataset shows earthquake distributions from 1995-2023. It captures critical variables used in our analysis such as Magnitude, CDI (Community Decimal Intensity), MMI (Modified Mercalli Intensity), SIG (Significance), and Depth. We utilize a variety of carefully chosen colors and themes to represent within our interactive visuals and app, with the use of incorporating the multiple critical eartquake measurements and variables together, in order to create a dynamic flow of information and various live-time interactions with the user. 
 
 <img src="Images/Sankey Diagram.png" width=1000>
 
